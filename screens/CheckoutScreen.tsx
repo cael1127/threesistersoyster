@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react"
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert } from "react-native"
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Keyboard, TouchableWithoutFeedback, KeyboardAvoidingView, Platform } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { useStripe, CardField } from '@stripe/stripe-react-native'
 import { useCart } from "../context/CartContext"
@@ -184,9 +184,14 @@ export default function CheckoutScreen({ navigation }: any) {
   }
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Order Summary</Text>
+    <KeyboardAvoidingView 
+      style={{ flex: 1 }} 
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Order Summary</Text>
         {state.items.map((item) => (
           <View key={item.id} style={styles.orderItem}>
             <Text style={styles.itemName}>{item.name}</Text>
@@ -209,6 +214,8 @@ export default function CheckoutScreen({ navigation }: any) {
           placeholder="Full Name"
           value={customerInfo.name}
           onChangeText={(value) => handleInputChange("name", value)}
+          returnKeyType="next"
+          blurOnSubmit={false}
         />
 
         <TextInput
@@ -218,6 +225,8 @@ export default function CheckoutScreen({ navigation }: any) {
           onChangeText={(value) => handleInputChange("email", value)}
           keyboardType="email-address"
           autoCapitalize="none"
+          returnKeyType="next"
+          blurOnSubmit={false}
         />
 
         <TextInput
@@ -226,6 +235,8 @@ export default function CheckoutScreen({ navigation }: any) {
           value={customerInfo.phone}
           onChangeText={(value) => handleInputChange("phone", value)}
           keyboardType="phone-pad"
+          returnKeyType="next"
+          blurOnSubmit={false}
         />
       </View>
 
@@ -237,6 +248,8 @@ export default function CheckoutScreen({ navigation }: any) {
           placeholder="Street Address"
           value={customerInfo.address}
           onChangeText={(value) => handleInputChange("address", value)}
+          returnKeyType="next"
+          blurOnSubmit={false}
         />
 
         <View style={styles.row}>
@@ -245,12 +258,16 @@ export default function CheckoutScreen({ navigation }: any) {
             placeholder="City"
             value={customerInfo.city}
             onChangeText={(value) => handleInputChange("city", value)}
+            returnKeyType="next"
+            blurOnSubmit={false}
           />
           <TextInput
             style={[styles.input, styles.halfInput]}
             placeholder="State"
             value={customerInfo.state}
             onChangeText={(value) => handleInputChange("state", value)}
+            returnKeyType="next"
+            blurOnSubmit={false}
           />
         </View>
 
@@ -260,6 +277,9 @@ export default function CheckoutScreen({ navigation }: any) {
           value={customerInfo.zipCode}
           onChangeText={(value) => handleInputChange("zipCode", value)}
           keyboardType="numeric"
+          returnKeyType="done"
+          onSubmitEditing={Keyboard.dismiss}
+          blurOnSubmit={true}
         />
       </View>
 
@@ -313,7 +333,9 @@ export default function CheckoutScreen({ navigation }: any) {
         <Ionicons name="shield-checkmark" size={20} color="#059669" />
         <Text style={styles.securityText}>Your payment information is encrypted and secure</Text>
       </View>
-    </ScrollView>
+        </ScrollView>
+      </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   )
 }
 

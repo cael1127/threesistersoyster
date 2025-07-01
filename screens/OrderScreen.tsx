@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput } from "react-native"
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput, Keyboard, TouchableWithoutFeedback } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useCart } from "../context/CartContext"
@@ -289,47 +289,63 @@ export default function OrderScreen({ navigation }: any) {
         visible={quantityModalVisible}
         transparent={true}
         animationType="slide"
-        onRequestClose={() => setQuantityModalVisible(false)}
+        onRequestClose={() => {
+          Keyboard.dismiss()
+          setQuantityModalVisible(false)
+        }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Quantity</Text>
-            <Text style={styles.modalProductName}>{selectedProduct?.name}</Text>
-            <Text style={styles.modalPrice}>${selectedProduct?.price}</Text>
-            
-            <View style={styles.quantityContainer}>
-              <Text style={styles.quantityLabel}>Quantity:</Text>
-              <TextInput
-                style={styles.quantityInput}
-                value={quantity}
-                onChangeText={setQuantity}
-                keyboardType="numeric"
-                placeholder="1"
-              />
-            </View>
-            
-            {selectedProduct?.inventory !== undefined && (
-              <Text style={styles.stockInfo}>
-                Available: {selectedProduct.inventory} items
-              </Text>
-            )}
-            
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalButtonCancel}
-                onPress={() => setQuantityModalVisible(false)}
-              >
-                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalButtonConfirm}
-                onPress={addToCart}
-              >
-                <Text style={styles.modalButtonTextConfirm}>Add to Cart</Text>
-              </TouchableOpacity>
-            </View>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Select Quantity</Text>
+                <Text style={styles.modalProductName}>{selectedProduct?.name}</Text>
+                <Text style={styles.modalPrice}>${selectedProduct?.price}</Text>
+                
+                <View style={styles.quantityContainer}>
+                  <Text style={styles.quantityLabel}>Quantity:</Text>
+                  <TextInput
+                    style={styles.quantityInput}
+                    value={quantity}
+                    onChangeText={setQuantity}
+                    keyboardType="numeric"
+                    placeholder="1"
+                    returnKeyType="done"
+                    onSubmitEditing={Keyboard.dismiss}
+                    blurOnSubmit={true}
+                  />
+                </View>
+                
+                {selectedProduct?.inventory !== undefined && (
+                  <Text style={styles.stockInfo}>
+                    Available: {selectedProduct.inventory} items
+                  </Text>
+                )}
+                
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={styles.modalButtonCancel}
+                    onPress={() => {
+                      Keyboard.dismiss()
+                      setQuantityModalVisible(false)
+                    }}
+                  >
+                    <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.modalButtonConfirm}
+                    onPress={() => {
+                      Keyboard.dismiss()
+                      addToCart()
+                    }}
+                  >
+                    <Text style={styles.modalButtonTextConfirm}>Add to Cart</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
     </View>
   )

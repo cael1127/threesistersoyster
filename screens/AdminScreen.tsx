@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Switch, Modal, ActivityIndicator } from "react-native"
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Switch, Modal, ActivityIndicator, Keyboard, TouchableWithoutFeedback, KeyboardAvoidingView, Platform } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useAdminAuth } from "../context/AdminAuthContext"
@@ -650,10 +650,18 @@ export default function AdminScreen() {
         visible={productModalVisible}
         animationType="slide"
         transparent={true}
-        onRequestClose={cancelEditProduct}
+        onRequestClose={() => {
+          Keyboard.dismiss()
+          cancelEditProduct()
+        }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <KeyboardAvoidingView 
+                style={styles.modalContent} 
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+              >
             <Text style={styles.modalTitle}>Edit Product</Text>
             {productError && <Text style={styles.errorText}>{productError}</Text>}
             {editingProduct && (
@@ -664,6 +672,8 @@ export default function AdminScreen() {
                     style={styles.inventoryInput}
                     value={editingProduct.name}
                     onChangeText={(text) => updateEditingProduct("name", text)}
+                    returnKeyType="next"
+                    blurOnSubmit={false}
                   />
                 </View>
                 <View style={styles.inputRow}>
@@ -673,6 +683,8 @@ export default function AdminScreen() {
                     value={editingProduct.price?.toString() || ""}
                     onChangeText={(text) => updateEditingProduct("price", parseFloat(text) || 0)}
                     keyboardType="numeric"
+                    returnKeyType="next"
+                    blurOnSubmit={false}
                   />
                 </View>
                 <View style={styles.inputRow}>
@@ -718,6 +730,9 @@ export default function AdminScreen() {
                   multiline
                   numberOfLines={3}
                   placeholder="Product description..."
+                  returnKeyType="done"
+                  onSubmitEditing={Keyboard.dismiss}
+                  blurOnSubmit={true}
                 />
                 <View style={styles.inputRow}>
                   <Text style={styles.inputLabel}>In Stock:</Text>
@@ -742,8 +757,10 @@ export default function AdminScreen() {
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
             </View>
+              </KeyboardAvoidingView>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       {/* Inventory Edit Modal */}
@@ -751,10 +768,18 @@ export default function AdminScreen() {
         visible={inventoryModalVisible}
         animationType="slide"
         transparent={true}
-        onRequestClose={cancelEditInventory}
+        onRequestClose={() => {
+          Keyboard.dismiss()
+          cancelEditInventory()
+        }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxHeight: '90%' }]}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <KeyboardAvoidingView 
+                style={[styles.modalContent, { maxHeight: '90%' }]} 
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+              >
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.modalTitle}>Edit Inventory</Text>
               {inventoryError && <Text style={styles.errorText}>{inventoryError}</Text>}
@@ -900,8 +925,10 @@ export default function AdminScreen() {
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
             </View>
+              </KeyboardAvoidingView>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
     </View>
   )

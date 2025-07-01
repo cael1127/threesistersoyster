@@ -11,7 +11,7 @@ export interface PaymentIntent {
 
 export class PaymentService {
   // Backend server URL - update this to your actual backend URL
-  private static readonly BACKEND_URL = 'http://localhost:3000';
+  private static readonly BACKEND_URL = 'https://back-oyster.vercel.app';
   // For production, use: 'https://your-backend-domain.com'
 
   static async createPaymentIntent(amount: number, currency: string = 'usd'): Promise<PaymentIntent> {
