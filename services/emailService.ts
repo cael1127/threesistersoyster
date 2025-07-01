@@ -23,7 +23,7 @@ export interface OrderEmailData {
 
 export class EmailService {
   // Backend server URL - update this to your actual backend URL
-  private static readonly BACKEND_URL = 'http://localhost:3000';
+  private static readonly BACKEND_URL = 'https://back-oyster.vercel.app';
   // For production, use: 'https://your-backend-domain.com'
 
   static async sendOrderNotification(orderData: OrderEmailData): Promise<{ success: boolean; error?: string }> {
