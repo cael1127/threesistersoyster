@@ -1,7 +1,5 @@
-import { Alert } from 'react-native';
-
-const STRIPE_SECRET_KEY = 'sk_test_51Re5snHIi0O9tm0E7Mwg3KZyiztanHmBwUHk1DubMe0lfMNAKvLro1Q5BmAm1bgCNsfqNKhzSfIq0ucUAjkD0ZFf00l9wgCfPG'; // Replace with your actual key
-const STRIPE_API_URL = 'https://api.stripe.com/v1';
+// Payment service for handling Stripe payments
+// This service communicates with the backend server for payment processing
 
 export interface PaymentIntent {
   id: string;
