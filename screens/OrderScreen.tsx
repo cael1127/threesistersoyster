@@ -3,10 +3,11 @@
 import React, { useState, useEffect } from "react"
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput, Keyboard, TouchableWithoutFeedback } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
-import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useCart } from "../context/CartContext"
 import { useFocusEffect } from "@react-navigation/native"
 import { useInventoryEvents } from "../context/InventoryEvents"
+import { colors } from "../config/colors"
+import { supabaseService, Product as SupabaseProduct } from "../services/supabaseService"
 
 interface Product {
   id: string
@@ -46,91 +47,29 @@ export default function OrderScreen({ navigation }: any) {
 
   const loadProducts = async () => {
     try {
-      const savedProducts = await AsyncStorage.getItem("admin_products")
-      if (savedProducts) {
-        const parsedProducts = JSON.parse(savedProducts)
-        setProducts(parsedProducts)
-        console.log("Products loaded:", parsedProducts.length)
-      } else {
-        // Fallback to default products
-        const defaultProducts: Product[] = [
-          {
-            id: "oyster-1",
-            name: "Pacific Oysters (Bulk - 100 count)",
-            price: 120,
-            type: "oyster",
-            description: "Fresh Pacific oysters, perfect for restaurants",
-            inStock: true,
-            inventory: 500,
-          },
-          {
-            id: "oyster-2",
-            name: "Kumamoto Oysters (Bulk - 100 count)",
-            price: 180,
-            type: "oyster",
-            description: "Premium Kumamoto oysters with sweet flavor",
-            inStock: true,
-            inventory: 300,
-          },
-          {
-            id: "oyster-3",
-            name: "Blue Pool Oysters (Bulk - 100 count)",
-            price: 150,
-            type: "oyster",
-            description: "Signature Blue Pool variety",
-            inStock: true,
-            inventory: 250,
-          },
-          {
-            id: "oyster-4",
-            name: "Mixed Variety Pack (50 count)",
-            price: 85,
-            type: "oyster",
-            description: "Assorted premium oysters",
-            inStock: true,
-            inventory: 100,
-          },
-          {
-            id: "merch-1",
-            name: "Three Sisters Oyster T-Shirt",
-            price: 25,
-            type: "merch",
-            description: "Premium cotton t-shirt with logo",
-            inStock: true,
-            inventory: 50,
-          },
-          {
-            id: "merch-2",
-            name: "Oyster Shucking Knife",
-            price: 35,
-            type: "merch",
-            description: "Professional grade shucking knife",
-            inStock: true,
-            inventory: 25,
-          },
-          {
-            id: "merch-3",
-            name: "Three Sisters Cap",
-            price: 20,
-            type: "merch",
-            description: "Adjustable cap with embroidered logo",
-            inStock: true,
-            inventory: 40,
-          },
-          {
-            id: "merch-4",
-            name: "Oyster Recipe Book",
-            price: 15,
-            type: "merch",
-            description: "Collection of gourmet oyster recipes",
-            inStock: false,
-            inventory: 0,
-          },
-        ]
-        setProducts(defaultProducts)
-      }
+      console.log("OrderScreen: Loading products from Supabase...")
+      const supabaseProducts = await supabaseService.getProducts()
+      
+      // Convert Supabase products to the expected format
+      const convertedProducts: Product[] = supabaseProducts.map((product: SupabaseProduct) => {
+        const inventory = supabaseService.getProductInventory(product);
+        return {
+          id: product.id || '',
+          name: product.name,
+          price: product.price,
+          type: product.category === 'oysters' ? 'oyster' : 'merch',
+          description: supabaseService.getProductOriginalDescription(product),
+          inStock: inventory > 0, // Show as in stock if inventory > 0
+          inventory: inventory, // Use actual inventory from JSON
+        };
+      });
+      
+      console.log("OrderScreen: Products loaded:", convertedProducts.length)
+      setProducts(convertedProducts)
     } catch (error) {
-      console.error("Failed to load products:", error)
+      console.error("OrderScreen: Failed to load products:", error)
+      // Fallback to empty array if Supabase fails
+      setProducts([])
     }
   }
 
@@ -354,21 +293,21 @@ export default function OrderScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8fafc",
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     padding: 20,
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    borderBottomColor: colors.border,
   },
   title: {
     fontSize: 28,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: colors.text.primary,
   },
   headerRight: {
     flexDirection: "row",
@@ -386,7 +325,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 0,
     right: 0,
-    backgroundColor: "#dc2626",
+    backgroundColor: colors.error,
     borderRadius: 10,
     minWidth: 20,
     height: 20,
@@ -394,15 +333,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   cartBadgeText: {
-    color: "#fff",
+    color: colors.text.inverse,
     fontSize: 12,
     fontWeight: "bold",
   },
   tabContainer: {
     flexDirection: "row",
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    borderBottomColor: colors.border,
   },
   tab: {
     flex: 1,
@@ -411,14 +350,14 @@ const styles = StyleSheet.create({
   },
   activeTab: {
     borderBottomWidth: 2,
-    borderBottomColor: "#0891b2",
+    borderBottomColor: colors.primary,
   },
   tabText: {
     fontSize: 16,
-    color: "#64748b",
+    color: colors.text.secondary,
   },
   activeTabText: {
-    color: "#0891b2",
+    color: colors.primary,
     fontWeight: "600",
   },
   content: {
@@ -426,7 +365,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   productCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
@@ -442,12 +381,12 @@ const styles = StyleSheet.create({
   productName: {
     fontSize: 18,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: colors.text.primary,
     marginBottom: 4,
   },
   productDescription: {
     fontSize: 14,
-    color: "#64748b",
+    color: colors.text.secondary,
     marginBottom: 8,
   },
   priceRow: {
@@ -458,26 +397,26 @@ const styles = StyleSheet.create({
   productPrice: {
     fontSize: 20,
     fontWeight: "bold",
-    color: "#059669",
+    color: colors.success,
   },
   inventoryText: {
     fontSize: 14,
-    color: "#64748b",
-    backgroundColor: "#f1f5f9",
+    color: colors.text.secondary,
+    backgroundColor: colors.gray[100],
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
   },
   lowInventoryText: {
-    backgroundColor: "#fef3c7",
-    color: "#92400e",
+    backgroundColor: colors.warning + '20',
+    color: colors.warning,
   },
   outOfStockText: {
-    backgroundColor: "#fee2e2",
-    color: "#dc2626",
+    backgroundColor: colors.error + '20',
+    color: colors.error,
   },
   addButton: {
-    backgroundColor: "#0891b2",
+    backgroundColor: colors.primary,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -485,16 +424,16 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   addButtonDisabled: {
-    backgroundColor: "#f1f5f9",
+    backgroundColor: colors.gray[100],
   },
   addButtonText: {
-    color: "#fff",
+    color: colors.text.inverse,
     fontSize: 16,
     fontWeight: "600",
     marginLeft: 8,
   },
   addButtonTextDisabled: {
-    color: "#94a3b8",
+    color: colors.text.tertiary,
   },
   emptyState: {
     flex: 1,
@@ -505,28 +444,28 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: colors.text.primary,
     marginTop: 16,
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 16,
-    color: "#64748b",
+    color: colors.text.secondary,
     textAlign: "center",
     marginBottom: 16,
   },
   refreshEmptyButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f0f9ff",
+    backgroundColor: colors.turquoise[50],
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#0891b2",
+    borderColor: colors.secondary,
   },
   refreshEmptyText: {
-    color: "#0891b2",
+    color: colors.secondary,
     fontSize: 14,
     marginLeft: 8,
   },
@@ -538,7 +477,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalContent: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 24,
     margin: 20,
@@ -553,20 +492,20 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: colors.text.primary,
     textAlign: "center",
     marginBottom: 8,
   },
   modalProductName: {
     fontSize: 16,
-    color: "#64748b",
+    color: colors.text.secondary,
     textAlign: "center",
     marginBottom: 4,
   },
   modalPrice: {
     fontSize: 18,
     fontWeight: "bold",
-    color: "#059669",
+    color: colors.success,
     textAlign: "center",
     marginBottom: 20,
   },
@@ -578,25 +517,25 @@ const styles = StyleSheet.create({
   },
   quantityLabel: {
     fontSize: 16,
-    color: "#1e293b",
+    color: colors.text.primary,
     fontWeight: "600",
   },
   quantityInput: {
     borderWidth: 1,
-    borderColor: "#d1d5db",
+    borderColor: colors.border,
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
     width: 100,
     textAlign: "center",
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
   },
   stockInfo: {
     fontSize: 14,
-    color: "#64748b",
+    color: colors.text.secondary,
     textAlign: "center",
     marginBottom: 20,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: colors.gray[100],
     padding: 8,
     borderRadius: 6,
   },
@@ -606,25 +545,25 @@ const styles = StyleSheet.create({
   },
   modalButtonCancel: {
     flex: 1,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: colors.gray[100],
     padding: 12,
     borderRadius: 8,
     alignItems: "center",
   },
   modalButtonConfirm: {
     flex: 1,
-    backgroundColor: "#0891b2",
+    backgroundColor: colors.primary,
     padding: 12,
     borderRadius: 8,
     alignItems: "center",
   },
   modalButtonTextCancel: {
-    color: "#64748b",
+    color: colors.text.secondary,
     fontSize: 16,
     fontWeight: "600",
   },
   modalButtonTextConfirm: {
-    color: "#fff",
+    color: colors.text.inverse,
     fontSize: 16,
     fontWeight: "600",
   },

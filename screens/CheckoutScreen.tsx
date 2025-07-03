@@ -3,11 +3,10 @@ import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert,
 import { Ionicons } from "@expo/vector-icons"
 import { useStripe, CardField } from '@stripe/stripe-react-native'
 import { useCart } from "../context/CartContext"
-import { PaymentService } from "../services/paymentService"
-import { InventoryService } from "../services/inventoryService"
-import { EmailService } from "../services/emailService"
 import { useInventoryEvents } from "../context/InventoryEvents"
-import AsyncStorage from "@react-native-async-storage/async-storage"
+import { colors } from "../config/colors"
+import { supabaseService } from "../services/supabaseService"
+import { sendOrderToDropshipper } from "../services/dropshippingService"
 
 export default function CheckoutScreen({ navigation }: any) {
   const { state, dispatch } = useCart()
@@ -54,102 +53,128 @@ export default function CheckoutScreen({ navigation }: any) {
 
     try {
       // Check stock availability before processing payment
-      const stockCheck = await InventoryService.checkStockAvailability(state.items)
-      if (!stockCheck.available) {
+      const stockAvailable = await supabaseService.checkStockAvailability(state.items)
+      if (!stockAvailable) {
         Alert.alert(
           "Items Out of Stock", 
-          `The following items are no longer available: ${stockCheck.unavailableItems.join(", ")}`
+          "Some items in your cart are no longer available. Please refresh and try again."
         )
         setIsProcessing(false)
         return
       }
 
-      // Create payment intent
-      const paymentIntent = await PaymentService.createPaymentIntent(state.total)
+      // Validate total amount
+      if (!state.total || state.total <= 0) {
+        console.error('Invalid total amount:', state.total);
+        Alert.alert("Invalid Order", "Order total is invalid. Please check your cart and try again.");
+        setIsProcessing(false);
+        return;
+      }
 
-      // Confirm payment with Stripe
-      const { error, paymentIntent: confirmedPayment } = await confirmPayment(
-        paymentIntent.client_secret,
-        {
-          paymentMethodType: 'Card',
-          paymentMethodData: {
-            billingDetails: {
-              name: customerInfo.name,
-              email: customerInfo.email,
-              phone: customerInfo.phone,
-              address: {
-                line1: customerInfo.address,
-                city: customerInfo.city,
-                state: customerInfo.state,
-                postalCode: customerInfo.zipCode,
-                country: 'US',
-              },
-            },
-          },
-        }
-      )
+      console.log('Creating payment intent for amount:', state.total);
+      console.log('Cart items:', state.items);
+      console.log('Cart total:', state.total);
 
-      if (error) {
-        Alert.alert("Payment Failed", error.message)
-        return
+      // Create a real payment intent with Stripe
+      const amountInCents = Math.round(state.total * 100);
+      
+      // Create body as a simple string to avoid URLSearchParams issues
+      const body = `amount=${amountInCents}&currency=usd&description=${encodeURIComponent(`Three Sisters Oyster Order - ${state.items.map(item => item.name).join(', ')}`)}&metadata[customer_name]=${encodeURIComponent(customerInfo.name)}&metadata[customer_email]=${encodeURIComponent(customerInfo.email)}&metadata[items]=${encodeURIComponent(state.items.map(item => `${item.name} x${item.quantity}`).join(', '))}`;
+
+      console.log('Payment intent body:', body);
+
+      const paymentIntentResponse = await fetch('https://api.stripe.com/v1/payment_intents', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer sk_test_51Re5snHIi0O9tm0E7Mwg3KZyiztanHmBwUHk1DubMe0lfMNAKvLro1Q5BmAm1bgCNsfqNKhzSfIq0ucUAjkD0ZFf00l9wgCfPG',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: body
+      });
+
+      const paymentIntent = await paymentIntentResponse.json();
+      
+      if (paymentIntent.error) {
+        console.error('Payment intent creation failed:', paymentIntent.error);
+        Alert.alert("Payment Error", "Failed to create payment. Please try again.");
+        setIsProcessing(false);
+        return;
+      }
+
+      console.log('Payment intent created:', paymentIntent.id);
+      console.log('Client secret:', paymentIntent.client_secret);
+
+      // Actually confirm the payment with the card details
+      const { error: confirmError, paymentIntent: confirmedPayment } = await confirmPayment(paymentIntent.client_secret, {
+        paymentMethodType: 'Card',
+      });
+
+      console.log('Payment confirmation result:', { confirmError, confirmedPayment });
+
+      if (confirmError) {
+        console.error('Payment confirmation failed:', confirmError);
+        Alert.alert("Payment Failed", confirmError.message || "Payment failed. Please try again.");
+        setIsProcessing(false);
+        return;
       }
 
       if (confirmedPayment?.status === 'Succeeded') {
-        // Generate a unique order ID
-        const orderId = `TSO-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-        
-        // Update inventory
-        const inventoryResult = await InventoryService.updateInventoryAfterPurchase(state.items)
-        if (!inventoryResult.success) {
-          console.error('Inventory update failed:', inventoryResult.error)
-          // Don't fail the order if inventory update fails, just log it
-        } else {
-          // Emit inventory update event to refresh other screens
-          inventoryEvents.emit()
-        }
-        
-        // Save order to your backend here
-        const saveResult = await saveOrder({
-          orderId,
-          paymentIntentId: paymentIntent.id,
-          customerInfo,
+        // Save order to Supabase first
+        const orderData = {
+          customer_name: customerInfo.name,
+          customer_email: customerInfo.email,
           items: state.items,
-          total: state.total,
-          timestamp: new Date().toISOString(),
-        })
+          total_amount: state.total,
+          status: 'pending' as const,
+          payment_intent_id: paymentIntent.id,
+          stripe_session_id: paymentIntent.id, // Use payment intent ID as session ID
+        }
 
-        if (saveResult.success) {
-          // Send email notification
-          const emailResult = await EmailService.sendOrderNotification({
-            orderId,
-            customerName: customerInfo.name,
-            customerEmail: customerInfo.email,
-            customerPhone: customerInfo.phone,
-            shippingAddress: {
-              address: customerInfo.address,
-              city: customerInfo.city,
-              state: customerInfo.state,
-              zipCode: customerInfo.zipCode,
-            },
-            items: state.items,
-            total: state.total,
-            timestamp: new Date().toISOString(),
-          })
+        const savedOrder = await supabaseService.createOrder(orderData)
 
-          if (!emailResult.success) {
-            console.error('Email notification failed:', emailResult.error)
-            // Don't fail the order if email fails, just log it
+        if (savedOrder) {
+          // Process the order and update inventory
+          if (savedOrder.id) {
+            const processResult = await supabaseService.processOrder(savedOrder.id, state.items)
+            if (processResult) {
+              // Emit inventory update event to refresh other screens
+              inventoryEvents.emit()
+              console.log('✅ Order processed and inventory updated')
+            } else {
+              console.error('❌ Failed to process order and update inventory')
+            }
           }
 
-          // Navigate to success screen instead of showing alert
+          // Check if any items are merchandise (for dropshipping)
+          const hasMerchandise = state.items.some((item: any) => 
+            item.category === 'merchandise' || item.name.toLowerCase().includes('shirt') || 
+            item.name.toLowerCase().includes('cap') || item.name.toLowerCase().includes('knife')
+          )
+
+          if (hasMerchandise) {
+            // Send to dropshipping service
+            try {
+              await sendOrderToDropshipper({
+                orderId: savedOrder.id,
+                customerInfo,
+                items: state.items,
+                total: state.total,
+              })
+              console.log('✅ Order sent to dropshipping service')
+            } catch (error) {
+              console.error('❌ Dropshipping service error:', error)
+            }
+          }
+
+          // Navigate to success screen
           navigation.navigate("PurchaseSuccess", {
-            orderId,
+            orderId: savedOrder.id,
             total: state.total,
             customerInfo,
             items: state.items,
           })
         } else {
-          Alert.alert("Payment Failed", saveResult.error)
+          Alert.alert("Order Failed", "Failed to save order. Please try again.")
         }
       }
     } catch (error) {
@@ -160,28 +185,10 @@ export default function CheckoutScreen({ navigation }: any) {
     }
   }
 
-  const saveOrder = async (orderData: any) => {
-    try {
-      // Save order locally using AsyncStorage
-      const existingOrders = await AsyncStorage.getItem('orders')
-      const orders = existingOrders ? JSON.parse(existingOrders) : []
-      
-      // Add new order to the beginning of the array
-      orders.unshift(orderData)
-      
-      // Keep only the last 50 orders to prevent storage bloat
-      const trimmedOrders = orders.slice(0, 50)
-      
-      await AsyncStorage.setItem('orders', JSON.stringify(trimmedOrders))
-      
-      console.log('Order saved locally:', orderData.orderId)
-      return { success: true, orderId: orderData.orderId }
-    } catch (error) {
-      console.error('Order save failed:', error)
-      // Don't fail the payment if order save fails, just log it
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
-    }
-  }
+  // This function is no longer needed since we're using Supabase directly
+  // const saveOrder = async (orderData: any) => {
+  //   // Removed - using supabaseService.createOrder instead
+  // }
 
   return (
     <KeyboardAvoidingView 
@@ -189,9 +196,9 @@ export default function CheckoutScreen({ navigation }: any) {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Order Summary</Text>
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Order Summary</Text>
         {state.items.map((item) => (
           <View key={item.id} style={styles.orderItem}>
             <Text style={styles.itemName}>{item.name}</Text>
@@ -291,9 +298,9 @@ export default function CheckoutScreen({ navigation }: any) {
             style={[styles.paymentOption, paymentMethod === "card" && styles.selectedPaymentOption]}
             onPress={() => setPaymentMethod("card")}
           >
-            <Ionicons name="card" size={24} color="#0891b2" />
+            <Ionicons name="card" size={24} color={colors.primary} />
             <Text style={styles.paymentOptionText}>Credit/Debit Card</Text>
-            {paymentMethod === "card" && <Ionicons name="checkmark-circle" size={20} color="#059669" />}
+            {paymentMethod === "card" && <Ionicons name="checkmark-circle" size={20} color={colors.success} />}
           </TouchableOpacity>
         </View>
 
@@ -323,17 +330,17 @@ export default function CheckoutScreen({ navigation }: any) {
           <Text style={styles.payButtonText}>Processing...</Text>
         ) : (
           <>
-            <Ionicons name="lock-closed" size={24} color="#fff" />
+            <Ionicons name="lock-closed" size={24} color={colors.text.inverse} />
             <Text style={styles.payButtonText}>Pay ${state.total.toFixed(2)} Securely</Text>
           </>
         )}
       </TouchableOpacity>
 
       <View style={styles.securityNote}>
-        <Ionicons name="shield-checkmark" size={20} color="#059669" />
+        <Ionicons name="shield-checkmark" size={20} color={colors.success} />
         <Text style={styles.securityText}>Your payment information is encrypted and secure</Text>
       </View>
-        </ScrollView>
+    </ScrollView>
       </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
   )
@@ -342,11 +349,11 @@ export default function CheckoutScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8fafc",
+    backgroundColor: colors.background,
     padding: 20,
   },
   section: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
@@ -359,23 +366,23 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: colors.text.primary,
     marginBottom: 16,
   },
   orderItem: {
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
+    borderBottomColor: colors.borderLight,
   },
   itemName: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#1e293b",
+    color: colors.text.primary,
     marginBottom: 4,
   },
   itemDetails: {
     fontSize: 14,
-    color: "#64748b",
+    color: colors.text.secondary,
   },
   totalRow: {
     flexDirection: "row",
@@ -384,26 +391,26 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     marginTop: 8,
     borderTopWidth: 2,
-    borderTopColor: "#e2e8f0",
+    borderTopColor: colors.border,
   },
   totalLabel: {
     fontSize: 18,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: colors.text.primary,
   },
   totalAmount: {
     fontSize: 20,
     fontWeight: "bold",
-    color: "#059669",
+    color: colors.success,
   },
   input: {
     borderWidth: 1,
-    borderColor: "#d1d5db",
+    borderColor: colors.border,
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
     marginBottom: 12,
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
   },
   row: {
     flexDirection: "row",
@@ -420,17 +427,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 16,
     borderWidth: 1,
-    borderColor: "#d1d5db",
+    borderColor: colors.border,
     borderRadius: 8,
-    backgroundColor: "#f8fafc",
+    backgroundColor: colors.background,
   },
   selectedPaymentOption: {
-    borderColor: "#0891b2",
-    backgroundColor: "#f0f9ff",
+    borderColor: colors.primary,
+    backgroundColor: colors.purple[50],
   },
   paymentOptionText: {
     fontSize: 16,
-    color: "#1e293b",
+    color: colors.text.primary,
     marginLeft: 12,
     flex: 1,
   },
@@ -441,13 +448,13 @@ const styles = StyleSheet.create({
     height: 50,
   },
   cardField: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#d1d5db',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 8,
   },
   payButton: {
-    backgroundColor: "#0891b2",
+    backgroundColor: colors.primary,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -456,10 +463,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   payButtonDisabled: {
-    backgroundColor: "#94a3b8",
+    backgroundColor: colors.text.tertiary,
   },
   payButtonText: {
-    color: "#fff",
+    color: colors.text.inverse,
     fontSize: 18,
     fontWeight: "bold",
     marginLeft: 8,
@@ -472,7 +479,7 @@ const styles = StyleSheet.create({
   },
   securityText: {
     fontSize: 14,
-    color: "#059669",
+    color: colors.success,
     marginLeft: 8,
   },
 })

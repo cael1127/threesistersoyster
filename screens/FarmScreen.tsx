@@ -3,9 +3,9 @@
 import React, { useState, useEffect } from "react"
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
-import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useFocusEffect } from "@react-navigation/native"
 import { useInventoryEvents } from "../context/InventoryEvents"
+import { supabaseService, InventoryItem } from "../services/supabaseService"
 
 interface FarmOyster {
   id: string
@@ -47,80 +47,103 @@ export default function FarmScreen() {
     setIsLoading(true)
     try {
       console.log("FarmScreen: Loading farm data...")
-      const savedInventory = await AsyncStorage.getItem("admin_inventory")
-      if (savedInventory) {
-        const parsedInventory = JSON.parse(savedInventory)
-        console.log("FarmScreen: Raw inventory data:", parsedInventory)
+      const inventoryItems = await supabaseService.getInventoryByType('farm')
+      
+      // Convert Supabase data to the expected format
+      const farmItems: FarmOyster[] = inventoryItems.map((item: InventoryItem) => {
+        // Parse additional data from description field
+        interface AdditionalData {
+          size?: string;
+          age?: string;
+          health?: string;
+          pricePerDozen?: number;
+          harvestReady?: boolean;
+          location?: string;
+        }
         
-        // Filter for farm items (items with type "farm" or items with location for backward compatibility)
-        const farmItems = parsedInventory.filter((item: any) => 
-          item.type === "farm" || (!item.type && item.location)
-        )
-        console.log("FarmScreen: Filtered farm items:", farmItems)
-        setFarmData(farmItems)
-      } else {
-        console.log("FarmScreen: No saved inventory, using default data")
-        // Fallback to default farm data
-        const defaultFarmData: FarmOyster[] = [
-          {
-            id: "1",
-            variety: "Pacific Oyster",
-            count: 2400,
-            size: "Market (75-100mm)",
-            location: "Bay Section A",
-            harvestReady: true,
-            pricePerDozen: 24,
-          },
-          {
-            id: "2",
-            variety: "Kumamoto",
-            count: 1800,
-            size: "Market (60-80mm)",
-            location: "Bay Section B",
-            harvestReady: true,
-            pricePerDozen: 32,
-          },
-          {
-            id: "3",
-            variety: "Blue Pool",
-            count: 1650,
-            size: "Market (70-90mm)",
-            location: "Bay Section C",
-            harvestReady: true,
-            pricePerDozen: 28,
-          },
-          {
-            id: "4",
-            variety: "Virginica",
-            count: 1200,
-            size: "Growing (50-70mm)",
-            location: "Bay Section D",
-            harvestReady: false,
-            pricePerDozen: 26,
-          },
-          {
-            id: "5",
-            variety: "Olympia",
-            count: 950,
-            size: "Market (40-60mm)",
-            location: "Bay Section E",
-            harvestReady: true,
-            pricePerDozen: 36,
-          },
-          {
-            id: "6",
-            variety: "Shigoku",
-            count: 750,
-            size: "Market (65-85mm)",
-            location: "Bay Section F",
-            harvestReady: true,
-            pricePerDozen: 30,
-          },
-        ]
-        setFarmData(defaultFarmData)
-      }
+        let additionalData: AdditionalData = {};
+        try {
+          if (item.description) {
+            additionalData = JSON.parse(item.description);
+          }
+        } catch (e) {
+          console.log('Could not parse description as JSON, using as string');
+        }
+        
+        return {
+          id: item.id || '',
+          variety: item.name,
+          count: item.count,
+          size: additionalData.size || '',
+          location: additionalData.location || '',
+          harvestReady: additionalData.harvestReady || false,
+          pricePerDozen: additionalData.pricePerDozen || 0,
+          type: item.type,
+        };
+      })
+      
+      console.log("FarmScreen: Loaded farm items:", farmItems)
+      setFarmData(farmItems)
     } catch (error) {
       console.error("FarmScreen: Failed to load farm data:", error)
+      // Fallback to default data
+      const defaultFarmData: FarmOyster[] = [
+        {
+          id: "1",
+          variety: "Pacific Oyster",
+          count: 2400,
+          size: "Market (75-100mm)",
+          location: "Bay Section A",
+          harvestReady: true,
+          pricePerDozen: 24,
+        },
+        {
+          id: "2",
+          variety: "Kumamoto",
+          count: 1800,
+          size: "Market (60-80mm)",
+          location: "Bay Section B",
+          harvestReady: true,
+          pricePerDozen: 32,
+        },
+        {
+          id: "3",
+          variety: "Blue Pool",
+          count: 1650,
+          size: "Market (70-90mm)",
+          location: "Bay Section C",
+          harvestReady: true,
+          pricePerDozen: 28,
+        },
+        {
+          id: "4",
+          variety: "Virginica",
+          count: 1200,
+          size: "Growing (50-70mm)",
+          location: "Bay Section D",
+          harvestReady: false,
+          pricePerDozen: 26,
+        },
+        {
+          id: "5",
+          variety: "Olympia",
+          count: 950,
+          size: "Market (40-60mm)",
+          location: "Bay Section E",
+          harvestReady: true,
+          pricePerDozen: 36,
+        },
+        {
+          id: "6",
+          variety: "Shigoku",
+          count: 750,
+          size: "Market (65-85mm)",
+          location: "Bay Section F",
+          harvestReady: true,
+          pricePerDozen: 30,
+        },
+      ]
+      setFarmData(defaultFarmData)
     } finally {
       setIsLoading(false)
     }

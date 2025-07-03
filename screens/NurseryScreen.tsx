@@ -3,9 +3,9 @@
 import React, { useState, useEffect } from "react"
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
-import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useFocusEffect } from "@react-navigation/native"
 import { useInventoryEvents } from "../context/InventoryEvents"
+import { supabaseService, InventoryItem } from "../services/supabaseService"
 
 interface NurseryOyster {
   id: string
@@ -46,58 +46,80 @@ export default function NurseryScreen() {
     setIsLoading(true)
     try {
       console.log("NurseryScreen: Loading nursery data...")
-      const savedInventory = await AsyncStorage.getItem("admin_inventory")
-      if (savedInventory) {
-        const parsedInventory = JSON.parse(savedInventory)
-        console.log("NurseryScreen: Raw inventory data:", parsedInventory)
+      const inventoryItems = await supabaseService.getInventoryByType('nursery')
+      
+      // Convert Supabase data to the expected format
+      const nurseryItems: NurseryOyster[] = inventoryItems.map((item: InventoryItem) => {
+        // Parse additional data from description field
+        interface AdditionalData {
+          size?: string;
+          age?: string;
+          health?: string;
+          pricePerDozen?: number;
+          harvestReady?: boolean;
+          location?: string;
+        }
         
-        // Filter for nursery items (items with type "nursery" or no type for backward compatibility)
-        const nurseryItems = parsedInventory.filter((item: any) => 
-          item.type === "nursery" || (!item.type && item.age)
-        )
-        console.log("NurseryScreen: Filtered nursery items:", nurseryItems)
-        setNurseryData(nurseryItems)
-      } else {
-        console.log("NurseryScreen: No saved inventory, using default data")
-        // Fallback to default nursery data
-        const defaultNurseryData: NurseryOyster[] = [
-          {
-            id: "1",
-            variety: "Pacific Oyster",
-            count: 850,
-            size: "Seed (5-10mm)",
-            age: "2 months",
-            health: "excellent",
-          },
-          {
-            id: "2",
-            variety: "Kumamoto",
-            count: 620,
-            size: "Seed (8-12mm)",
-            age: "3 months",
-            health: "excellent",
-          },
-          {
-            id: "3",
-            variety: "Blue Pool",
-            count: 480,
-            size: "Juvenile (10-15mm)",
-            age: "4 months",
-            health: "good",
-          },
-          {
-            id: "4",
-            variety: "Virginica",
-            count: 500,
-            size: "Seed (6-10mm)",
-            age: "2.5 months",
-            health: "excellent",
-          },
-        ]
-        setNurseryData(defaultNurseryData)
-      }
+        let additionalData: AdditionalData = {};
+        try {
+          if (item.description) {
+            additionalData = JSON.parse(item.description);
+          }
+        } catch (e) {
+          console.log('Could not parse description as JSON, using as string');
+        }
+        
+        return {
+          id: item.id || '',
+          variety: item.name,
+          count: item.count,
+          size: additionalData.size || '',
+          age: additionalData.age || '',
+          health: (additionalData.health as "excellent" | "good" | "fair") || "excellent",
+          type: item.type,
+        };
+      })
+      
+      console.log("NurseryScreen: Loaded nursery items:", nurseryItems)
+      setNurseryData(nurseryItems)
     } catch (error) {
       console.error("NurseryScreen: Failed to load nursery data:", error)
+      // Fallback to default data
+      const defaultNurseryData: NurseryOyster[] = [
+        {
+          id: "1",
+          variety: "Pacific Oyster",
+          count: 850,
+          size: "Seed (5-10mm)",
+          age: "2 months",
+          health: "excellent",
+        },
+        {
+          id: "2",
+          variety: "Kumamoto",
+          count: 620,
+          size: "Seed (8-12mm)",
+          age: "3 months",
+          health: "excellent",
+        },
+        {
+          id: "3",
+          variety: "Blue Pool",
+          count: 480,
+          size: "Juvenile (10-15mm)",
+          age: "4 months",
+          health: "good",
+        },
+        {
+          id: "4",
+          variety: "Virginica",
+          count: 500,
+          size: "Seed (6-10mm)",
+          age: "2.5 months",
+          health: "excellent",
+        },
+      ]
+      setNurseryData(defaultNurseryData)
     } finally {
       setIsLoading(false)
     }

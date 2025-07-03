@@ -1,3 +1,4 @@
+import React from "react"
 import { NavigationContainer } from "@react-navigation/native"
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs"
 import { createStackNavigator } from "@react-navigation/stack"
@@ -18,6 +19,8 @@ import { CartProvider } from "./context/CartContext"
 import { AdminAuthProvider } from "./context/AdminAuthContext"
 import { stripeConfig } from "./config/stripe"
 import { InventoryEventProvider } from "./context/InventoryEvents"
+import { colors } from "./config/colors"
+import { supabaseService } from "./services/supabaseService"
 
 const Tab = createBottomTabNavigator()
 const Stack = createStackNavigator()
@@ -31,8 +34,8 @@ function OrderStack() {
         component={CartScreen}
         options={{
           title: "Your Cart",
-          headerStyle: { backgroundColor: "#0891b2" },
-          headerTintColor: "#fff",
+          headerStyle: { backgroundColor: colors.primary },
+          headerTintColor: colors.text.inverse,
         }}
       />
       <Stack.Screen
@@ -40,8 +43,8 @@ function OrderStack() {
         component={CheckoutScreen}
         options={{
           title: "Checkout",
-          headerStyle: { backgroundColor: "#0891b2" },
-          headerTintColor: "#fff",
+          headerStyle: { backgroundColor: colors.primary },
+          headerTintColor: colors.text.inverse,
         }}
       />
       <Stack.Screen
@@ -49,8 +52,8 @@ function OrderStack() {
         component={PurchaseSuccessScreen}
         options={{
           title: "Order Confirmation",
-          headerStyle: { backgroundColor: "#059669" },
-          headerTintColor: "#fff",
+          headerStyle: { backgroundColor: colors.success },
+          headerTintColor: colors.text.inverse,
           headerLeft: () => null, // Prevent going back
         }}
       />
@@ -81,16 +84,16 @@ function TabNavigator() {
 
           return <Ionicons name={iconName as any} size={size} color={color} />
         },
-        tabBarActiveTintColor: "#0891b2",
-        tabBarInactiveTintColor: "#64748b",
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.text.secondary,
         tabBarStyle: {
-          backgroundColor: "#f8fafc",
-          borderTopColor: "#e2e8f0",
+          backgroundColor: colors.background,
+          borderTopColor: colors.border,
         },
         headerStyle: {
-          backgroundColor: "#0891b2",
+          backgroundColor: colors.primary,
         },
-        headerTintColor: "#fff",
+        headerTintColor: colors.text.inverse,
         headerTitleStyle: {
           fontWeight: "bold",
         },
@@ -106,6 +109,21 @@ function TabNavigator() {
 }
 
 export default function App() {
+  // Initialize Supabase data on app start
+  React.useEffect(() => {
+    const initializeData = async () => {
+      try {
+        console.log('App: Initializing Supabase data...')
+        await supabaseService.initializeDefaultData()
+        console.log('App: Supabase data initialized successfully')
+      } catch (error) {
+        console.error('App: Failed to initialize Supabase data:', error)
+      }
+    }
+    
+    initializeData()
+  }, [])
+
   return (
     <StripeProvider publishableKey={stripeConfig.publishableKey}>
       <SafeAreaProvider>

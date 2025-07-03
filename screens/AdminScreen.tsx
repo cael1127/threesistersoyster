@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react"
 
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Switch, Modal, ActivityIndicator, Keyboard, TouchableWithoutFeedback, KeyboardAvoidingView, Platform } from "react-native"
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Switch, Modal, ActivityIndicator, Keyboard, TouchableWithoutFeedback, KeyboardAvoidingView, Platform, RefreshControl } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
-import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useAdminAuth } from "../context/AdminAuthContext"
 import { useInventoryEvents } from "../context/InventoryEvents"
+import { supabaseService, Product, InventoryItem } from "../services/supabaseService"
 import React from "react";
 
 interface AdminProduct {
@@ -46,6 +46,8 @@ export default function AdminScreen() {
   const [productModalVisible, setProductModalVisible] = useState(false)
   const [productError, setProductError] = useState<string | null>(null)
   const [savingProduct, setSavingProduct] = useState(false)
+  const [orders, setOrders] = useState<any[]>([])
+  const [isLoadingOrders, setIsLoadingOrders] = useState(false)
 
   useEffect(() => {
     loadAdminData()
@@ -73,235 +75,153 @@ export default function AdminScreen() {
     }
   }
 
+  const loadOrders = async () => {
+    try {
+      setIsLoadingOrders(true)
+      const allOrders = await supabaseService.getOrders()
+      setOrders(allOrders)
+    } catch (error) {
+      console.error("Failed to load orders:", error)
+      setOrders([])
+    } finally {
+      setIsLoadingOrders(false)
+    }
+  }
+
   const loadAdminData = async () => {
     setIsLoading(true)
     try {
-      const savedProducts = await AsyncStorage.getItem("admin_products")
-      const savedInventory = await AsyncStorage.getItem("admin_inventory")
+      // Debug: Check table structure first
+      await supabaseService.debugTableStructure();
+      
+      // Load products from Supabase
+      const supabaseProducts = await supabaseService.getProducts()
+      const convertedProducts: AdminProduct[] = supabaseProducts.map((product: Product) => ({
+        id: product.id || '',
+        name: product.name,
+        price: product.price,
+        type: product.category === 'oysters' ? 'oyster' : 'merch',
+        description: supabaseService.getProductOriginalDescription(product),
+        inStock: true, // Default to true
+        inventory: supabaseService.getProductInventory(product),
+      }))
+      setProducts(convertedProducts)
 
-      if (savedProducts) {
-        setProducts(JSON.parse(savedProducts))
-      } else {
-        loadMockData()
-      }
+      // Load inventory from Supabase
+      const supabaseInventory = await supabaseService.getInventory()
+      const convertedInventory: AdminInventory[] = supabaseInventory.map((item: InventoryItem) => {
+        // Parse additional data from description field
+        interface AdditionalData {
+          size?: string;
+          age?: string;
+          health?: string;
+          pricePerDozen?: number;
+          harvestReady?: boolean;
+          location?: string;
+        }
+        
+        let additionalData: AdditionalData = {};
+        try {
+          if (item.description) {
+            additionalData = JSON.parse(item.description);
+          }
+        } catch (e) {
+          console.log('Could not parse description as JSON, using as string');
+        }
+        
+        return {
+          id: item.id || '',
+          variety: item.name,
+          count: item.count,
+          size: additionalData.size || '',
+          age: additionalData.age || '',
+          health: additionalData.health as any,
+          harvestReady: additionalData.harvestReady,
+          pricePerDozen: additionalData.pricePerDozen,
+          type: item.type,
+          location: additionalData.location,
+        };
+      })
+      setInventory(convertedInventory)
 
-      if (savedInventory) {
-        setInventory(JSON.parse(savedInventory))
-      } else {
-        loadMockInventory()
-      }
+      // Load orders from Supabase
+      await loadOrders()
     } catch (error) {
       console.error("Failed to load admin data:", error)
-      loadMockData()
-      loadMockInventory()
+      Alert.alert("Connection Error", "Failed to load data from database. Please check your internet connection and try again.")
+      // Fallback to empty arrays if Supabase fails
+      setProducts([])
+      setInventory([])
+      setOrders([])
     } finally {
       setIsLoading(false)
     }
   }
 
-  const loadMockData = () => {
-    const mockProducts: AdminProduct[] = [
-      {
-        id: "oyster-1",
-        name: "Pacific Oysters (Bulk - 100 count)",
-        price: 120,
-        type: "oyster",
-        description: "Fresh Pacific oysters, perfect for restaurants",
-        inStock: true,
-        inventory: 500,
-      },
-      {
-        id: "oyster-2",
-        name: "Kumamoto Oysters (Bulk - 100 count)",
-        price: 180,
-        type: "oyster",
-        description: "Premium Kumamoto oysters with sweet flavor",
-        inStock: true,
-        inventory: 300,
-      },
-      {
-        id: "oyster-3",
-        name: "Blue Pool Oysters (Bulk - 100 count)",
-        price: 150,
-        type: "oyster",
-        description: "Signature Blue Pool variety",
-        inStock: true,
-        inventory: 250,
-      },
-      {
-        id: "merch-1",
-        name: "Three Sisters Oyster T-Shirt",
-        price: 25,
-        type: "merch",
-        description: "Premium cotton t-shirt with logo",
-        inStock: true,
-        inventory: 50,
-      },
-      {
-        id: "merch-2",
-        name: "Oyster Shucking Knife",
-        price: 35,
-        type: "merch",
-        description: "Professional grade shucking knife",
-        inStock: true,
-        inventory: 25,
-      },
-      {
-        id: "merch-3",
-        name: "Three Sisters Cap",
-        price: 20,
-        type: "merch",
-        description: "Adjustable cap with embroidered logo",
-        inStock: true,
-        inventory: 40,
-      },
-    ]
-
-    setProducts(mockProducts)
-    AsyncStorage.setItem("admin_products", JSON.stringify(mockProducts))
-  }
-
-  const loadMockInventory = () => {
-    const mockInventory: AdminInventory[] = [
-      // Nursery Inventory
-      {
-        id: "nursery-1",
-        variety: "Pacific Oyster",
-        count: 850,
-        size: "Seed (5-10mm)",
-        age: "2 months",
-        health: "excellent",
-        type: "nursery",
-      },
-      {
-        id: "nursery-2",
-        variety: "Kumamoto",
-        count: 620,
-        size: "Seed (8-12mm)",
-        age: "3 months",
-        health: "excellent",
-        type: "nursery",
-      },
-      {
-        id: "nursery-3",
-        variety: "Blue Pool",
-        count: 480,
-        size: "Juvenile (10-15mm)",
-        age: "4 months",
-        health: "good",
-        type: "nursery",
-      },
-      {
-        id: "nursery-4",
-        variety: "Virginica",
-        count: 500,
-        size: "Seed (6-10mm)",
-        age: "2.5 months",
-        health: "excellent",
-        type: "nursery",
-      },
-      // Farm Inventory
-      {
-        id: "farm-1",
-        variety: "Pacific Oyster",
-        count: 2400,
-        size: "Market (75-100mm)",
-        location: "Bay Section A",
-        harvestReady: true,
-        pricePerDozen: 24,
-        type: "farm",
-      },
-      {
-        id: "farm-2",
-        variety: "Kumamoto",
-        count: 1800,
-        size: "Market (60-80mm)",
-        location: "Bay Section B",
-        harvestReady: true,
-        pricePerDozen: 32,
-        type: "farm",
-      },
-      {
-        id: "farm-3",
-        variety: "Blue Pool",
-        count: 1650,
-        size: "Market (70-90mm)",
-        location: "Bay Section C",
-        harvestReady: true,
-        pricePerDozen: 28,
-        type: "farm",
-      },
-      {
-        id: "farm-4",
-        variety: "Virginica",
-        count: 1200,
-        size: "Growing (50-70mm)",
-        location: "Bay Section D",
-        harvestReady: false,
-        pricePerDozen: 26,
-        type: "farm",
-      },
-      {
-        id: "farm-5",
-        variety: "Olympia",
-        count: 950,
-        size: "Market (40-60mm)",
-        location: "Bay Section E",
-        harvestReady: true,
-        pricePerDozen: 36,
-        type: "farm",
-      },
-      {
-        id: "farm-6",
-        variety: "Shigoku",
-        count: 750,
-        size: "Market (65-85mm)",
-        location: "Bay Section F",
-        harvestReady: true,
-        pricePerDozen: 30,
-        type: "farm",
-      },
-    ]
-
-    setInventory(mockInventory)
-    AsyncStorage.setItem("admin_inventory", JSON.stringify(mockInventory))
-  }
-
   const saveProduct = async (product: AdminProduct) => {
     try {
-      const updatedProducts = products.map((p) => (p.id === product.id ? product : p))
-      setProducts(updatedProducts)
-      await AsyncStorage.setItem("admin_products", JSON.stringify(updatedProducts))
-
-      // Emit real-time update event
-      emitInventoryUpdate()
-
-      setEditingProduct(null)
-      setHasUnsavedChanges(false)
-      Alert.alert("Success", "Product saved successfully! Changes will appear instantly across all screens.")
+      const supabaseProduct: Product = {
+        id: product.id,
+        name: product.name,
+        description: product.description,
+        price: product.price,
+        category: product.type === 'oyster' ? 'oysters' : 'merchandise',
+      }
+      
+      const savedProduct = await supabaseService.saveProduct(supabaseProduct, product.inventory || 0)
+      if (savedProduct) {
+        const updatedProducts = products.map((p) => (p.id === product.id ? product : p))
+        setProducts(updatedProducts)
+        emitInventoryUpdate()
+        setEditingProduct(null)
+        setHasUnsavedChanges(false)
+        Alert.alert("Success", "Product saved successfully! Changes will appear instantly across all screens.")
+      } else {
+        Alert.alert("Error", "Failed to save product to database")
+      }
     } catch (error) {
       console.error("Save failed:", error)
-      Alert.alert("Error", "Failed to save product")
+      Alert.alert("Error", "Failed to save product. Please check your internet connection and try again.")
     }
   }
 
   const saveInventory = async (item: AdminInventory) => {
     try {
       console.log("AdminScreen: Saving inventory item:", item)
-      const updatedInventory = inventory.map((i) => (i.id === item.id ? item : i))
-      setInventory(updatedInventory)
-      await AsyncStorage.setItem("admin_inventory", JSON.stringify(updatedInventory))
-
-      // Emit real-time update event
-      console.log("AdminScreen: Emitting inventory update event")
-      emitInventoryUpdate()
-
-      setEditingInventory(null)
-      setHasUnsavedChanges(false)
-      Alert.alert("Success", "Inventory saved successfully! Changes will appear instantly across all screens.")
+      
+      // Store additional fields as JSON in description
+      const additionalData = {
+        size: item.size,
+        age: item.age,
+        health: item.health,
+        pricePerDozen: item.pricePerDozen,
+        harvestReady: item.harvestReady,
+        location: item.location,
+      };
+      
+      const supabaseItem: InventoryItem = {
+        id: item.id,
+        name: item.variety,
+        type: item.type || 'nursery',
+        count: item.count,
+        description: JSON.stringify(additionalData),
+      }
+      
+      const savedItem = await supabaseService.saveInventoryItem(supabaseItem)
+      if (savedItem) {
+        const updatedInventory = inventory.map((i) => (i.id === item.id ? item : i))
+        setInventory(updatedInventory)
+        console.log("AdminScreen: Emitting inventory update event")
+        emitInventoryUpdate()
+        setEditingInventory(null)
+        setHasUnsavedChanges(false)
+        Alert.alert("Success", "Inventory saved successfully! Changes will appear instantly across all screens.")
+      } else {
+        Alert.alert("Error", "Failed to save inventory to database")
+      }
     } catch (error) {
       console.error("Save failed:", error)
-      Alert.alert("Error", "Failed to save inventory")
+      Alert.alert("Error", "Failed to save inventory. Please check your internet connection and try again.")
     }
   }
 
@@ -386,36 +306,79 @@ export default function AdminScreen() {
   }
 
   const addNewProduct = () => {
-    Alert.prompt("Add New Product", "Enter product name:", (name) => {
+    Alert.prompt("Add New Product", "Enter product name:", async (name) => {
       if (name) {
         const newProduct: AdminProduct = {
-          id: `product-${Date.now()}`,
           name,
           price: 0,
           type: "merch",
           description: "",
           inStock: true,
           inventory: 0,
+        } as AdminProduct;
+        // Save to Supabase immediately to get the UUID
+        const supabaseProduct: Product = {
+          name: newProduct.name,
+          description: newProduct.description,
+          price: newProduct.price,
+          category: newProduct.type === 'oyster' ? 'oysters' : 'merchandise',
+        };
+        const savedProduct = await supabaseService.saveProduct(supabaseProduct);
+        if (savedProduct) {
+          const adminProduct: AdminProduct = {
+            id: savedProduct.id || '',
+            name: savedProduct.name,
+            price: savedProduct.price,
+            type: savedProduct.category === 'oysters' ? 'oyster' : 'merch',
+            description: savedProduct.description,
+            inStock: true,
+            inventory: 0,
+          };
+          setProducts((prev) => [...prev, adminProduct]);
+          startEditingProduct(adminProduct);
+        } else {
+          Alert.alert("Error", "Failed to create product in database");
         }
-        setProducts((prev) => [...prev, newProduct])
-        startEditingProduct(newProduct)
       }
-    })
+    });
   }
 
   const addNewInventoryItem = () => {
-    Alert.prompt("Add New Inventory Item", "Enter variety name:", (variety) => {
+    Alert.prompt("Add New Inventory Item", "Enter variety name:", async (variety) => {
       if (variety) {
         const newItem: AdminInventory = {
-          id: `inventory-${Date.now()}`,
           variety,
           count: 0,
-          size: "",
+          size: "Seed (5-10mm)",
+          age: "2 months",
+          health: "excellent",
+          type: "nursery",
+        } as AdminInventory;
+        // Save to Supabase immediately to get the UUID
+        const supabaseItem: InventoryItem = {
+          name: newItem.variety,
+          type: newItem.type || 'nursery',
+          count: newItem.count,
+          description: `${newItem.size} - ${newItem.age}`,
+        };
+        const savedItem = await supabaseService.saveInventoryItem(supabaseItem);
+        if (savedItem) {
+          const adminInventory: AdminInventory = {
+            id: savedItem.id || '',
+            variety: savedItem.name,
+            count: savedItem.count,
+            size: newItem.size,
+            age: newItem.age,
+            health: newItem.health,
+            type: savedItem.type || 'nursery',
+          };
+          setInventory((prev) => [...prev, adminInventory]);
+          startEditingInventory(adminInventory);
+        } else {
+          Alert.alert("Error", "Failed to create inventory item in database");
         }
-        setInventory((prev) => [...prev, newItem])
-        startEditingInventory(newItem)
       }
-    })
+    });
   }
 
   const deleteProduct = (productId: string) => {
@@ -425,16 +388,18 @@ export default function AdminScreen() {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
-          const updatedProducts = products.filter((p) => p.id !== productId)
-          setProducts(updatedProducts)
-          await AsyncStorage.setItem("admin_products", JSON.stringify(updatedProducts))
-          
-          // Emit real-time update event
-          emitInventoryUpdate()
+          const deleted = await supabaseService.deleteProduct(productId)
+          if (deleted) {
+            const updatedProducts = products.filter((p) => p.id !== productId)
+            setProducts(updatedProducts)
+            emitInventoryUpdate()
 
-          if (editingProduct?.id === productId) {
-            setEditingProduct(null)
-            setHasUnsavedChanges(false)
+            if (editingProduct?.id === productId) {
+              setEditingProduct(null)
+              setHasUnsavedChanges(false)
+            }
+          } else {
+            Alert.alert("Error", "Failed to delete product from database")
           }
         },
       },
@@ -448,16 +413,18 @@ export default function AdminScreen() {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
-          const updatedInventory = inventory.filter((i) => i.id !== inventoryId)
-          setInventory(updatedInventory)
-          await AsyncStorage.setItem("admin_inventory", JSON.stringify(updatedInventory))
-          
-          // Emit real-time update event
-          emitInventoryUpdate()
+          const deleted = await supabaseService.deleteInventoryItem(inventoryId)
+          if (deleted) {
+            const updatedInventory = inventory.filter((i) => i.id !== inventoryId)
+            setInventory(updatedInventory)
+            emitInventoryUpdate()
 
-          if (editingInventory?.id === inventoryId) {
-            setEditingInventory(null)
-            setHasUnsavedChanges(false)
+            if (editingInventory?.id === inventoryId) {
+              setEditingInventory(null)
+              setHasUnsavedChanges(false)
+            }
+          } else {
+            Alert.alert("Error", "Failed to delete inventory item from database")
           }
         },
       },
@@ -569,6 +536,22 @@ export default function AdminScreen() {
     )
   }
 
+  const updateOrderStatus = async (orderId: string, status: string) => {
+    try {
+      const success = await supabaseService.updateOrderStatus(orderId, status)
+      if (success) {
+        // Reload orders to reflect the change
+        await loadOrders()
+        Alert.alert("Success", `Order status updated to ${status}`)
+      } else {
+        Alert.alert("Error", "Failed to update order status")
+      }
+    } catch (error) {
+      console.error("Failed to update order status:", error)
+      Alert.alert("Error", "Failed to update order status")
+    }
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -580,7 +563,10 @@ export default function AdminScreen() {
           >
             <Ionicons name="add" size={24} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.refreshButton} onPress={loadAdminData}>
+          <TouchableOpacity style={styles.refreshButton} onPress={() => {
+            setIsLoading(true)
+            loadAdminData()
+          }}>
             <Ionicons name="refresh" size={24} color="#0891b2" />
           </TouchableOpacity>
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
@@ -617,7 +603,21 @@ export default function AdminScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={() => {
+              setIsLoading(true)
+              loadAdminData()
+            }}
+            colors={["#0891b2"]}
+            tintColor="#0891b2"
+          />
+        }
+      >
         {isLoading ? (
           <View style={styles.loadingContainer}>
             <Text style={styles.loadingText}>Loading...</Text>
@@ -634,12 +634,83 @@ export default function AdminScreen() {
               </>
             )}
             {activeTab === "orders" && (
-              <View style={styles.comingSoon}>
-                <Ionicons name="receipt-outline" size={64} color="#94a3b8" />
-                <Text style={styles.comingSoonText}>Order Management</Text>
-                <Text style={styles.comingSoonSubtext}>View and manage customer orders</Text>
-                <Text style={styles.comingSoonNote}>Coming soon with backend integration</Text>
-              </View>
+              <>
+                {isLoadingOrders ? (
+                  <View style={styles.loadingContainer}>
+                    <Text style={styles.loadingText}>Loading orders...</Text>
+                  </View>
+                ) : orders.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Ionicons name="receipt-outline" size={64} color="#94a3b8" />
+                    <Text style={styles.emptyStateText}>No orders yet</Text>
+                    <Text style={styles.emptyStateSubtext}>Customer orders will appear here</Text>
+                  </View>
+                ) : (
+                  orders.map((order) => (
+                    <View key={order.id} style={styles.orderCard}>
+                      <View style={styles.orderHeader}>
+                        <Text style={styles.orderId}>Order #{order.id}</Text>
+                        <View style={[
+                          styles.statusBadge,
+                          order.status === 'confirmed' && styles.statusConfirmed,
+                          order.status === 'pending' && styles.statusPending,
+                          order.status === 'cancelled' && styles.statusCancelled
+                        ]}>
+                          <Text style={styles.statusText}>{order.status}</Text>
+                        </View>
+                      </View>
+                      
+                      <View style={styles.orderInfo}>
+                        <Text style={styles.customerName}>{order.customer_name}</Text>
+                        <Text style={styles.customerEmail}>{order.customer_email}</Text>
+                        <Text style={styles.orderDate}>
+                          {new Date(order.created_at).toLocaleDateString()}
+                        </Text>
+                        <Text style={styles.orderTotal}>Total: ${order.total_amount}</Text>
+                        {(() => {
+                          const paymentInfo = supabaseService.getOrderPaymentInfo(order);
+                          if (paymentInfo.payment_intent_id) {
+                            return (
+                              <Text style={styles.paymentInfo}>
+                                Payment ID: {paymentInfo.payment_intent_id}
+                              </Text>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </View>
+                      
+                      <View style={styles.orderItems}>
+                        <Text style={styles.itemsTitle}>Items:</Text>
+                        {order.items.map((item: any, index: number) => (
+                          <Text key={index} style={styles.orderItem}>
+                            • {item.name} (Qty: {item.quantity}) - ${(item.price * item.quantity).toFixed(2)}
+                          </Text>
+                        ))}
+                      </View>
+                      
+                      <View style={styles.orderActions}>
+                        {order.status === 'pending' && (
+                          <>
+                            <TouchableOpacity
+                              style={[styles.actionButton, styles.confirmButton]}
+                              onPress={() => updateOrderStatus(order.id, 'confirmed')}
+                            >
+                              <Text style={styles.actionButtonText}>Confirm</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.actionButton, styles.cancelButton]}
+                              onPress={() => updateOrderStatus(order.id, 'cancelled')}
+                            >
+                              <Text style={styles.actionButtonText}>Cancel</Text>
+                            </TouchableOpacity>
+                          </>
+                        )}
+                      </View>
+                    </View>
+                  ))
+                )}
+              </>
             )}
           </>
         )}
@@ -656,7 +727,7 @@ export default function AdminScreen() {
         }}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.modalOverlay}>
+        <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback onPress={() => {}}>
               <KeyboardAvoidingView 
                 style={styles.modalContent} 
@@ -774,7 +845,7 @@ export default function AdminScreen() {
         }}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.modalOverlay}>
+        <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback onPress={() => {}}>
               <KeyboardAvoidingView 
                 style={[styles.modalContent, { maxHeight: '90%' }]} 
@@ -833,83 +904,80 @@ export default function AdminScreen() {
                     <Text style={styles.inputLabel}>Size:</Text>
                     <TextInput
                       style={styles.inventoryInput}
-                      value={editingInventory.size}
+                      value={editingInventory.size || ""}
                       onChangeText={(text) => updateEditingInventory("size", text)}
+                      placeholder="e.g. Seed (5-10mm)"
                     />
                   </View>
 
-                  {editingInventory.type === "nursery" && (
-                    <>
-                      <View style={styles.inputRow}>
-                        <Text style={styles.inputLabel}>Age:</Text>
-                        <TextInput
-                          style={styles.inventoryInput}
-                          value={editingInventory.age || ""}
-                          onChangeText={(text) => updateEditingInventory("age", text)}
-                          placeholder="e.g., 2 months"
-                        />
-                      </View>
+                  <View style={styles.inputRow}>
+                    <Text style={styles.inputLabel}>Age:</Text>
+                    <TextInput
+                      style={styles.inventoryInput}
+                      value={editingInventory.age || ""}
+                      onChangeText={(text) => updateEditingInventory("age", text)}
+                      placeholder="e.g. 2 months"
+                    />
+                  </View>
 
-                      <View style={styles.inputRow}>
-                        <Text style={styles.inputLabel}>Health:</Text>
-                        <View style={styles.healthButtons}>
-                          {["excellent", "good", "fair"].map((health) => (
-                            <TouchableOpacity
-                              key={health}
-                              style={[
-                                styles.healthButton,
-                                editingInventory.health === health && styles.activeHealthButton,
-                              ]}
-                              onPress={() => updateEditingInventory("health", health as "excellent" | "good" | "fair")}
-                            >
-                              <Text
-                                style={[
-                                  styles.healthButtonText,
-                                  editingInventory.health === health && styles.activeHealthButtonText,
-                                ]}
-                              >
-                                {health.charAt(0).toUpperCase() + health.slice(1)}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      </View>
-                    </>
+                  <View style={styles.inputRow}>
+                    <Text style={styles.inputLabel}>Health:</Text>
+                    <View style={styles.healthButtons}>
+                      {["excellent", "good", "fair"].map((health) => (
+                        <TouchableOpacity
+                          key={health}
+                          style={[
+                            styles.healthButton,
+                            editingInventory.health === health && styles.activeHealthButton,
+                          ]}
+                          onPress={() => updateEditingInventory("health", health)}
+                        >
+                          <Text
+                            style={[
+                              styles.healthButtonText,
+                              editingInventory.health === health && styles.activeHealthButtonText,
+                            ]}
+                          >
+                            {health.charAt(0).toUpperCase() + health.slice(1)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  {/* Price per Dozen only for farm */}
+                  {editingInventory.type === 'farm' && (
+                    <View style={styles.inputRow}>
+                      <Text style={styles.inputLabel}>Price/Dozen:</Text>
+                      <TextInput
+                        style={styles.inventoryInput}
+                        value={editingInventory.pricePerDozen?.toString() || ""}
+                        onChangeText={(text) => updateEditingInventory("pricePerDozen", parseFloat(text) || 0)}
+                        keyboardType="numeric"
+                        placeholder="e.g. 24"
+                      />
+                    </View>
                   )}
 
-                  {editingInventory.type === "farm" && (
-                    <>
-                      <View style={styles.inputRow}>
-                        <Text style={styles.inputLabel}>Location:</Text>
-                        <TextInput
-                          style={styles.inventoryInput}
-                          value={editingInventory.location || ""}
-                          onChangeText={(text) => updateEditingInventory("location", text)}
-                          placeholder="e.g., Bay Section A"
-                        />
-                      </View>
+                  <View style={styles.inputRow}>
+                    <Text style={styles.inputLabel}>Harvest Ready:</Text>
+                    <Switch
+                      value={!!editingInventory.harvestReady}
+                      onValueChange={(value) => updateEditingInventory("harvestReady", value)}
+                      trackColor={{ false: "#f87171", true: "#10b981" }}
+                      thumbColor="#ffffff"
+                    />
+                  </View>
 
-                      <View style={styles.inputRow}>
-                        <Text style={styles.inputLabel}>Price/Dozen: $</Text>
-                        <TextInput
-                          style={styles.inventoryInput}
-                          value={editingInventory.pricePerDozen?.toString() || ""}
-                          onChangeText={(text) => updateEditingInventory("pricePerDozen", parseFloat(text) || 0)}
-                          keyboardType="numeric"
-                        />
-                      </View>
-
-                      <View style={styles.inputRow}>
-                        <Text style={styles.inputLabel}>Harvest Ready:</Text>
-                        <Switch
-                          value={editingInventory.harvestReady || false}
-                          onValueChange={(value) => updateEditingInventory("harvestReady", value)}
-                          trackColor={{ false: "#f87171", true: "#10b981" }}
-                          thumbColor="#ffffff"
-                        />
-                      </View>
-                    </>
-                  )}
+                  <View style={styles.inputRow}>
+                    <Text style={styles.inputLabel}>Location:</Text>
+                    <TextInput
+                      style={styles.inventoryInput}
+                      value={editingInventory.location || ""}
+                      onChangeText={(text) => updateEditingInventory("location", text)}
+                      placeholder="e.g. Bay Section A"
+                    />
+                  </View>
                 </>
               )}
             </ScrollView>
@@ -1047,6 +1115,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#1e293b",
     flex: 1,
+    flexWrap: 'wrap',
   },
   cardActions: {
     flexDirection: "row",
@@ -1088,10 +1157,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 12,
     gap: 12,
+    flexWrap: 'wrap',
   },
   stockText: {
     fontSize: 16,
     color: "#374151",
+    flexShrink: 1,
+    minWidth: 0,
   },
   inputRow: {
     flexDirection: "row",
@@ -1267,5 +1339,127 @@ const styles = StyleSheet.create({
   descriptionText: {
     color: "#64748b",
     marginTop: 8,
+    fontSize: 14,
+    lineHeight: 20,
+    flexWrap: 'wrap',
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40,
+  },
+  emptyStateText: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#1e293b",
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyStateSubtext: {
+    fontSize: 16,
+    color: "#64748b",
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  orderCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  orderHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  orderId: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#1e293b",
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "#f3f4f6",
+  },
+  statusConfirmed: {
+    backgroundColor: "#d1fae5",
+  },
+  statusPending: {
+    backgroundColor: "#fef2f2",
+  },
+  statusCancelled: {
+    backgroundColor: "#fef2f2",
+  },
+  statusText: {
+    fontSize: 14,
+    color: "#155e75",
+    fontWeight: "bold",
+  },
+  orderInfo: {
+    marginBottom: 16,
+  },
+  customerName: {
+    fontSize: 16,
+    color: "#1e293b",
+    fontWeight: "bold",
+  },
+  customerEmail: {
+    fontSize: 14,
+    color: "#64748b",
+  },
+  orderDate: {
+    fontSize: 14,
+    color: "#64748b",
+  },
+  orderTotal: {
+    fontSize: 14,
+    color: "#64748b",
+  },
+  orderItems: {
+    marginBottom: 16,
+  },
+  itemsTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#1e293b",
+    marginBottom: 8,
+  },
+  orderItem: {
+    fontSize: 14,
+    color: "#64748b",
+  },
+  orderActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  actionButton: {
+    padding: 8,
+    borderRadius: 6,
+    backgroundColor: "#0891b2",
+  },
+  actionButtonText: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "#fff",
+  },
+  confirmButton: {
+    backgroundColor: "#10b981",
+  },
+  cancelButton: {
+    backgroundColor: "#dc2626",
+  },
+  paymentInfo: {
+    fontSize: 14,
+    color: "#64748b",
   },
 })

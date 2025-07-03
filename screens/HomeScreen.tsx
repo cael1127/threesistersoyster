@@ -2,9 +2,10 @@ import React, { useState, useEffect } from "react"
 import { View, Text, StyleSheet, ScrollView, ImageBackground, TouchableOpacity, ActivityIndicator } from "react-native"
 import { LinearGradient } from "expo-linear-gradient"
 import { Ionicons } from "@expo/vector-icons"
-import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useFocusEffect } from "@react-navigation/native"
 import { useInventoryEvents } from "../context/InventoryEvents"
+import { colors } from "../config/colors"
+import { supabaseService } from "../services/supabaseService"
 
 export default function HomeScreen({ navigation }: any) {
   const [nurseryCount, setNurseryCount] = useState(0)
@@ -36,32 +37,11 @@ export default function HomeScreen({ navigation }: any) {
     setIsLoading(true)
     try {
       console.log("HomeScreen: Loading inventory data...")
-      const savedInventory = await AsyncStorage.getItem("admin_inventory")
-      if (savedInventory) {
-        const parsedInventory = JSON.parse(savedInventory)
-        console.log("HomeScreen: Raw inventory data:", parsedInventory)
-        
-        // Calculate nursery count
-        const nurseryItems = parsedInventory.filter((item: any) => 
-          item.type === "nursery" || (!item.type && item.age)
-        )
-        const nurseryTotal = nurseryItems.reduce((sum: number, item: any) => sum + (item.count || 0), 0)
-        setNurseryCount(nurseryTotal)
-        
-        // Calculate farm count
-        const farmItems = parsedInventory.filter((item: any) => 
-          item.type === "farm" || (!item.type && item.location)
-        )
-        const farmTotal = farmItems.reduce((sum: number, item: any) => sum + (item.count || 0), 0)
-        setFarmCount(farmTotal)
-        
-        console.log("HomeScreen: Nursery count:", nurseryTotal, "Farm count:", farmTotal)
-      } else {
-        console.log("HomeScreen: No saved inventory, using default counts")
-        // Default counts from mock data
-        setNurseryCount(2450)
-        setFarmCount(8750)
-      }
+      const stats = await supabaseService.getInventoryStatistics()
+      
+      setNurseryCount(stats.total_nursery)
+      setFarmCount(stats.total_farm)
+      console.log("HomeScreen: Nursery count:", stats.total_nursery, "Farm count:", stats.total_farm)
     } catch (error) {
       console.error("HomeScreen: Failed to load inventory data:", error)
       // Fallback to default counts
@@ -75,7 +55,14 @@ export default function HomeScreen({ navigation }: any) {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.heroSection}>
-        <LinearGradient colors={["#0891b2", "#065f46"]} style={styles.heroOverlay}>
+        <LinearGradient colors={[colors.primary, colors.secondary]} style={styles.heroOverlay}>
+          {/* Logo Placeholder */}
+          <View style={styles.logoContainer}>
+            <View style={styles.logoPlaceholder}>
+              <Ionicons name="fish" size={48} color={colors.text.inverse} />
+              <Text style={styles.logoText}>LOGO</Text>
+            </View>
+          </View>
           <Text style={styles.heroTitle}>Three Sisters Oyster Co.</Text>
           <Text style={styles.heroSubtitle}>Port Lavaca Oysters</Text>
         </LinearGradient>
@@ -84,18 +71,18 @@ export default function HomeScreen({ navigation }: any) {
       <View style={styles.content}>
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
-            <Ionicons name="leaf" size={32} color="#059669" />
+            <Ionicons name="leaf" size={32} color={colors.primary} />
             {isLoading ? (
-              <ActivityIndicator size="small" color="#059669" style={{ marginTop: 8 }} />
+              <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 8 }} />
             ) : (
               <Text style={styles.statNumber}>{nurseryCount.toLocaleString()}</Text>
             )}
             <Text style={styles.statLabel}>Nursery Oysters</Text>
           </View>
           <View style={styles.statCard}>
-            <Ionicons name="water" size={32} color="#0891b2" />
+            <Ionicons name="water" size={32} color={colors.secondary} />
             {isLoading ? (
-              <ActivityIndicator size="small" color="#0891b2" style={{ marginTop: 8 }} />
+              <ActivityIndicator size="small" color={colors.secondary} style={{ marginTop: 8 }} />
             ) : (
               <Text style={styles.statNumber}>{farmCount.toLocaleString()}</Text>
             )}
@@ -104,9 +91,9 @@ export default function HomeScreen({ navigation }: any) {
         </View>
 
         <View style={styles.totalStatsCard}>
-          <Ionicons name="fish" size={40} color="#0891b2" />
+          <Ionicons name="fish" size={40} color={colors.secondary} />
           {isLoading ? (
-            <ActivityIndicator size="large" color="#0891b2" style={{ marginTop: 8 }} />
+            <ActivityIndicator size="large" color={colors.secondary} style={{ marginTop: 8 }} />
           ) : (
             <Text style={styles.totalStatNumber}>{(nurseryCount + farmCount).toLocaleString()}</Text>
           )}
@@ -122,11 +109,11 @@ export default function HomeScreen({ navigation }: any) {
 
         <View style={styles.quickActions}>
           <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate("Nursery")}>
-            <Ionicons name="leaf" size={24} color="#fff" />
+            <Ionicons name="leaf" size={24} color={colors.text.inverse} />
             <Text style={styles.actionButtonText}>View Nursery</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate("Farm")}>
-            <Ionicons name="water" size={24} color="#fff" />
+            <Ionicons name="water" size={24} color={colors.text.inverse} />
             <Text style={styles.actionButtonText}>Farm Inventory</Text>
           </TouchableOpacity>
         </View>
@@ -138,7 +125,7 @@ export default function HomeScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8fafc",
+    backgroundColor: colors.background,
   },
   heroSection: {
     height: 300,
@@ -150,17 +137,37 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  logoContainer: {
+    marginBottom: 20,
+  },
+  logoPlaceholder: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 3,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  logoText: {
+    color: colors.text.inverse,
+    fontSize: 12,
+    fontWeight: "bold",
+    marginTop: 4,
+  },
   heroTitle: {
     fontSize: 32,
     fontWeight: "bold",
-    color: "#fff",
+    color: colors.text.inverse,
     textAlign: "center",
     marginBottom: 8,
   },
   heroSubtitle: {
     fontSize: 18,
-    color: "#f1f5f9",
+    color: colors.text.inverse,
     textAlign: "center",
+    opacity: 0.9,
   },
   content: {
     padding: 20,
@@ -171,7 +178,7 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   statCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     padding: 20,
     borderRadius: 12,
     alignItems: "center",
@@ -185,16 +192,16 @@ const styles = StyleSheet.create({
   statNumber: {
     fontSize: 24,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: colors.text.primary,
     marginTop: 8,
   },
   statLabel: {
     fontSize: 14,
-    color: "#64748b",
+    color: colors.text.secondary,
     textAlign: "center",
   },
   totalStatsCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     padding: 20,
     borderRadius: 12,
     alignItems: "center",
@@ -208,12 +215,12 @@ const styles = StyleSheet.create({
   totalStatNumber: {
     fontSize: 24,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: colors.text.primary,
     marginTop: 8,
   },
   totalStatLabel: {
     fontSize: 14,
-    color: "#64748b",
+    color: colors.text.secondary,
     textAlign: "center",
   },
   section: {
@@ -222,12 +229,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 24,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: colors.text.primary,
     marginBottom: 12,
   },
   sectionText: {
     fontSize: 16,
-    color: "#475569",
+    color: colors.text.secondary,
     lineHeight: 24,
   },
   quickActions: {
@@ -235,7 +242,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   actionButton: {
-    backgroundColor: "#0891b2",
+    backgroundColor: colors.primary,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -244,7 +251,7 @@ const styles = StyleSheet.create({
     flex: 0.48,
   },
   actionButtonText: {
-    color: "#fff",
+    color: colors.text.inverse,
     fontSize: 16,
     fontWeight: "600",
     marginLeft: 8,
